@@ -10,7 +10,7 @@ data_dir      = '/media/sf_D_DRIVE/MotDepPrf/Analysis/S02/06_bayesPrf/data/';
 surf_dir      = '/media/sf_D_DRIVE/MotDepPrf/Analysis/S02/Anatomy/Session02/';
 
 % Directory for creating GLM
-glm_dir  = '/media/sf_D_DRIVE/MotDepPrf/Analysis/S02/06_bayesPrf/glm/';
+glm_dir  = '/media/sf_D_DRIVE/MotDepPrf/Analysis/S02/06_bayesPrf/pRF_results/';
 
 % Set VOI name
 try
@@ -42,12 +42,21 @@ stim_duration = 1.4;
 % Diameter of stimuli in degrees
 stim_diameter = 17;
 
+%% Derive and adjust settings
+
+% Change the current folder to the folder of this m-file.
+if(~isdeployed)
+    tmp = matlab.desktop.editor.getActive;
+    cd(fileparts(tmp.Filename));
+end
+
+% Set present directory to variable
+start_dir = pwd;
+
 % Update glm_dir
 glm_dir = fullfile(glm_dir, [voi_name mtn_cnd stp_drc]);
 
-%% Prepare onsets
-
-% Derive vector for inward and outward runs
+% Derive vector for inward or outward runs
 switch stp_drc
     case '_outward'
         sess = 1:2:11;
@@ -55,8 +64,10 @@ switch stp_drc
         sess = 2:2:11;
 end
 
-% cd into scripts directory
-cd(fullfile(data_root_dir, 'scripts'))
+% Derive number of sessions
+nsess = length(sess);
+
+%% Prepare onsets
 
 % load exp info
 load(fullfile(data_root_dir,'expInfo',['ApnFrm',mtn_cnd,stp_drc,'.mat']));
@@ -98,20 +109,16 @@ for t = 1:num_regressors
     durations{t} = 0;
 end
 
-save(fullfile(pwd, ['onsets_',voi_name, mtn_cnd,stp_drc,'.mat']), 'names', 'onsets', 'durations');
-
-%% Specify first level design
-
-start_dir = pwd;
-
-% Derive number of sessions
-nsess = length(sess);
-
 % Make output directory
 if ~exist(glm_dir,'file')
     mkdir(glm_dir);
 end
 
+save(fullfile(glm_dir, ['onsets_',voi_name, mtn_cnd,stp_drc,'.mat']), 'names', 'onsets', 'durations');
+
+%% Specify first level design
+
+% Load generic matlabbatch for fmri_spec, fmri_est and con(trast)
 load('first_level_batch.mat');
 
 % Session-specific options
@@ -121,7 +128,7 @@ for i = 1:nsess
     epis     = spm_select('ExtFPList',data_dir, str_run, 1:999);
 
     matlabbatch{1}.spm.stats.fmri_spec.sess(i).scans     = cellstr(epis);
-    matlabbatch{1}.spm.stats.fmri_spec.sess(i).multi     = cellstr(['onsets_',voi_name, mtn_cnd,stp_drc,'.mat']);
+    matlabbatch{1}.spm.stats.fmri_spec.sess(i).multi     = cellstr(fullfile(glm_dir, ['onsets_',voi_name, mtn_cnd,stp_drc,'.mat']));
     matlabbatch{1}.spm.stats.fmri_spec.sess(i).multi_reg = {''};
     matlabbatch{1}.spm.stats.fmri_spec.sess(i).cond = struct('name', {}, 'onset', {}, 'duration', {}, 'tmod', {}, 'pmod', {}, 'orth', {});
     matlabbatch{1}.spm.stats.fmri_spec.sess(i).regress = struct('name', {}, 'val', {});
@@ -162,6 +169,8 @@ matlabbatch{1}.spm.stats.results.write.tspm.basename = 'mask_uncorrected';
 % Run job
 spm_jobman('run',matlabbatch);
 
+cd(start_dir);
+
 %% Extract timeseries from surface voxels which survive p < 0.001
 
 % Identify masks
@@ -186,6 +195,8 @@ matlabbatch{1}.spm.util.voi.expression        = 'i1 & i2';
 
 % Run batch
 spm_jobman('run',matlabbatch);
+
+cd(start_dir);
 
 % gzip
 unix(['gzip ', fullfile(p1, p2)]);
