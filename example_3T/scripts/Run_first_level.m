@@ -16,21 +16,21 @@ glm_dir  = '/media/sf_D_DRIVE/MotDepPrf/Analysis/S02/06_bayesPrf/glm/';
 try
   voi_name;
 catch
-  voi_name = 'voi_name';
+  voi_name = 'S02_2H_V1_1mm';
 end
 
 % Motion condition
 try
   mtn_cnd;
 catch
-  mtn_cnd = 'mtn_cnd';
+  mtn_cnd = '_expn';
 end
 
 % Stepping direction
 try
   stp_drc;
 catch
-  stp_drc = 'stp_drc';
+  stp_drc = '_outward';
 end
 
 % Repetition time
