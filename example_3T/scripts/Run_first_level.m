@@ -1,63 +1,83 @@
-%% Downloads example data (900MB), runs GLM analysis and extracts timeseries
+%% Runs GLM analysis and extracts timeseries
 
 % Settings
-
-% Directory into which to download example dataset
-data_root_dir = 'D:\samdata\';
-data_dir      = fullfile(data_root_dir,'Example','pRF');
-surf_dir      = fullfile(data_root_dir,'Example','surf');
-
-% Directory for creating GLM
-glm_dir  = fullfile(pwd,'../GLM');
-
-% Number of sessions
-nsess = 10;
-
-% Repetition time
-TR    = 1;
-%% Set defaults
+clc;close all;
 spm('defaults','FMRI')
 
-%% Download and unzip example data
-if ~exist(data_root_dir,'file')
-    mkdir(data_root_dir);
+% Directory into which to download example dataset
+data_root_dir = '/media/sf_D_DRIVE/MotDepPrf/Analysis/S02/06_bayesPrf/';
+data_dir      = '/media/sf_D_DRIVE/MotDepPrf/Analysis/S02/06_bayesPrf/data/';
+surf_dir      = '/media/sf_D_DRIVE/MotDepPrf/Analysis/S02/Anatomy/Session02/';
+
+% Directory for creating GLM
+glm_dir  = '/media/sf_D_DRIVE/MotDepPrf/Analysis/S02/06_bayesPrf/glm/';
+
+% Set VOI name
+try
+  voi_name;
+catch
+  voi_name = 'voi_name';
 end
 
-% Download
-fn = fullfile(data_root_dir,'Example.zip');
-fprintf('%-40s:', 'Downloading SamSrf dataset...');
-urlwrite('https://zenodo.org/record/163582/files/Example.zip',fn);
+% Motion condition
+try
+  mtn_cnd;
+catch
+  mtn_cnd = 'mtn_cnd';
+end
 
-% Unzip
-unzip(fn, data_root_dir);
+% Stepping direction
+try
+  stp_drc;
+catch
+  stp_drc = 'stp_drc';
+end
 
-fprintf(' %30s\n', '...done');
+% Repetition time
+TR = 2;
+% Bins per TR (default 16 or number of slices)
+nmicrotime    = 35;
+% Duration of stimuli (secs)
+stim_duration = 1.4;
+% Diameter of stimuli in degrees
+stim_diameter = 17;
+
+% Update glm_dir
+glm_dir = fullfile(glm_dir, [voi_name mtn_cnd stp_drc]);
+
 %% Prepare onsets
-load(fullfile(data_dir,'aps_Bars.mat'));
-U = prepare_inputs_polar_samsrf(ApFrm,TR);
 
-bins_x = [-8.5 0 8.5];
-bins_y = [8.5 0 -8.5];
+% Derive vector for inward and outward runs
+switch stp_drc
+    case '_outward'
+        sess = 1:2:11;
+    case '_inward'
+        sess = 2:2:11;
+end
+
+% cd into scripts directory
+cd(fullfile(data_root_dir, 'scripts'))
+
+% load exp info
+load(fullfile(data_root_dir,'expInfo',['ApnFrm',mtn_cnd,stp_drc,'.mat']));
+U = prepare_inputs_polar_samsrf(ApFrm,TR, nmicrotime, stim_duration, stim_diameter);
+% remove empty fields from structure
+empty_elems = arrayfun(@(s) all(structfun(@isempty,s)), U);
+U(empty_elems) = [];
+
+bins_d = linspace(3.4, 8.5, 8);
 
 % Build time x screen bins matrix (3x3 screen bins)
-onsets_matrix = zeros(length(U), length(bins_x) .^ 2);
+onsets_matrix = zeros(length(U), length(bins_d));
 for t = 1:length(U)
     % Loop over pixels activated at this time point
     for activated_pixel = 1:length(U(t).dist)
         % Get location
         dist  = U(t).dist(activated_pixel);
         angle = U(t).angle(activated_pixel);
-        
-        % Polar->cartesian
-        x = dist * cos(angle);
-        y = dist * sin(angle);
 
         % Identify closest bin
-        [~,binx] = min(abs(bins_x-x));
-        [~,biny] = min(abs(bins_y-y));
-
-        % Binned coordintes -> index
-        bin_idx = sub2ind([length(bins_x) length(bins_x)],biny,binx);
+        [~,bin_idx] = min(abs(bins_d-dist));
 
         onsets_matrix(t,bin_idx) = onsets_matrix(t,bin_idx) + 1;
     end
@@ -68,9 +88,9 @@ onsets_matrix = onsets_matrix(:,any(onsets_matrix));
 num_regressors = size(onsets_matrix,2);
 
 % SPM inputs
-names = cell(1,num_regressors); 
-onsets = cell(1,num_regressors); 
-durations = cell(1,num_regressors); 
+names = cell(1,num_regressors);
+onsets = cell(1,num_regressors);
+durations = cell(1,num_regressors);
 
 for t = 1:num_regressors
     names{t} = ['Bin' num2str(t)];
@@ -78,37 +98,46 @@ for t = 1:num_regressors
     durations{t} = 0;
 end
 
-save(fullfile(pwd, 'onsets.mat'), 'names', 'onsets', 'durations');
+save(fullfile(pwd, ['onsets_',voi_name, mtn_cnd,stp_drc,'.mat']), 'names', 'onsets', 'durations');
 
 %% Specify first level design
 
 start_dir = pwd;
+
+% Derive number of sessions
+nsess = length(sess);
 
 % Make output directory
 if ~exist(glm_dir,'file')
     mkdir(glm_dir);
 end
 
-% Load generic matlabbatch for fmri_spec, fmri_est and con(trast)
 load('first_level_batch.mat');
 
 % Session-specific options
 for i = 1:nsess
-    movement = spm_select('FPList',data_dir,sprintf('rp_bfBars%d.txt',i));
-    epis     = spm_select('ExtFPList',data_dir,sprintf('ubfBars%d.nii',i), 1:999);    
-    
-    matlabbatch{1}.spm.stats.fmri_spec.sess(i).multi_reg = cellstr(movement);
+    str_run_num = sprintf('%02d', sess(i));
+    str_run = ['func', str_run_num, '_SlTiSPM_MoCoSPM_msk', mtn_cnd, '.nii'];
+    epis     = spm_select('ExtFPList',data_dir, str_run, 1:999);
+
     matlabbatch{1}.spm.stats.fmri_spec.sess(i).scans     = cellstr(epis);
-    matlabbatch{1}.spm.stats.fmri_spec.sess(i).multi     = cellstr('onsets.mat');
-    
+    matlabbatch{1}.spm.stats.fmri_spec.sess(i).multi     = cellstr(['onsets_',voi_name, mtn_cnd,stp_drc,'.mat']);
+    matlabbatch{1}.spm.stats.fmri_spec.sess(i).multi_reg = {''};
     matlabbatch{1}.spm.stats.fmri_spec.sess(i).cond = struct('name', {}, 'onset', {}, 'duration', {}, 'tmod', {}, 'pmod', {}, 'orth', {});
     matlabbatch{1}.spm.stats.fmri_spec.sess(i).regress = struct('name', {}, 'val', {});
-    matlabbatch{1}.spm.stats.fmri_spec.sess(i).hpf = 128;    
+    matlabbatch{1}.spm.stats.fmri_spec.sess(i).hpf = 112;
 end
 
 % Model spec options
+matlabbatch{1}.spm.stats.fmri_spec.timing.fmri_t = nmicrotime;
+matlabbatch{1}.spm.stats.fmri_spec.timing.fmri_t0 = 1;
 matlabbatch{1}.spm.stats.fmri_spec.dir = cellstr(glm_dir);
 matlabbatch{1}.spm.stats.fmri_spec.timing.RT = TR;
+matlabbatch{1}.spm.stats.fmri_spec.cvi = 'none';
+
+% Specify spm.mat location
+matlabbatch{2}.spm.stats.fmri_est.spmmat = cellstr(fullfile(glm_dir,'SPM.mat'));
+matlabbatch{3}.spm.stats.con.spmmat = cellstr(fullfile(glm_dir,'SPM.mat'));
 
 % Initialise job configuration
 spm_jobman('initcfg')
@@ -116,64 +145,47 @@ spm_jobman('initcfg')
 spm_jobman('run',matlabbatch);
 
 cd(start_dir);
-%% Import cortical surface
-%
-% Creates images: GLM/lh_surface.nii and GLM/rh_surface.nii
-% and .mat files: GLM/lh_Srf.mat and GLM/rh_Srf.mat
 
-% Structural image
-struct = fullfile(data_dir,'T1.nii');
-
-% Left hemisphere
-spm_prf_import_surface(glm_dir, struct, surf_dir, 'lh');
-
-% Right hemisphere
-spm_prf_import_surface(glm_dir, struct, surf_dir, 'rh');
 %% Build a mask of voxels which survive p < 0.001
 clear matlabbatch;
 matlabbatch{1}.spm.stats.results.spmmat = cellstr(fullfile(glm_dir,'SPM.mat'));
 matlabbatch{1}.spm.stats.results.conspec.titlestr = '';
 matlabbatch{1}.spm.stats.results.conspec.contrasts = 1;
 matlabbatch{1}.spm.stats.results.conspec.threshdesc = 'none';
-matlabbatch{1}.spm.stats.results.conspec.thresh = 0.001;
+matlabbatch{1}.spm.stats.results.conspec.thresh = 0.005;
 matlabbatch{1}.spm.stats.results.conspec.extent = 0;
-matlabbatch{1}.spm.stats.results.conspec.conjunction = 1;
 matlabbatch{1}.spm.stats.results.conspec.mask.none = 1;
 matlabbatch{1}.spm.stats.results.units = 1;
-% matlabbatch{1}.spm.stats.results.export{1}.binary.basename = 'mask_uncorrected';
+matlabbatch{1}.spm.stats.results.print = false;
 matlabbatch{1}.spm.stats.results.write.tspm.basename = 'mask_uncorrected';
+
+% Run job
 spm_jobman('run',matlabbatch);
-%% Remove voxels from the mask anterior to y = 0
-cd(glm_dir);
 
-% Read
-V = spm_vol('spmF_0001_mask_uncorrected.nii');
-[Y,XYZmm] = spm_read_vols(V);
-
-% Threshold
-i = XYZmm(2,:) > 0;
-
-% Write
-Y(i) = 0;
-spm_write_vol(V,Y);
-
-cd(start_dir);
 %% Extract timeseries from surface voxels which survive p < 0.001
 
-% Hemisphere (we'll just do left for now)
-hemi = 'lh';
-
 % Identify masks
-spm_F_mask   = fullfile(glm_dir,'spmF_0001_mask_uncorrected.nii');
-surface_mask = fullfile(glm_dir,[hemi '_surface.nii']);
+mask1   = fullfile(surf_dir,[voi_name, '.nii.gz']);
+[p1,p2,~] = fileparts(mask1);
+mask2   = fullfile(glm_dir,'spmF_0001_mask_uncorrected.nii');
+
+% gunzip
+unix(['gunzip ', mask1]);
 
 % Prepare batch
 load('extract_timeseries_batch.mat');
-matlabbatch{1}.spm.util.voi.name   = [hemi '_prf_mask'];
+
+matlabbatch{1}.spm.util.voi.name = [p2(1:end-4)];
 matlabbatch{1}.spm.util.voi.spmmat = cellstr(fullfile(glm_dir,'SPM.mat'));
-matlabbatch{1}.spm.util.voi.roi{1}.mask.image = cellstr(spm_F_mask);
-matlabbatch{1}.spm.util.voi.roi{2}.mask.image = cellstr(surface_mask);
+matlabbatch{1}.spm.util.voi.adjust = 1;
+matlabbatch{1}.spm.util.voi.roi{1}.mask.threshold = 0.5;
+matlabbatch{1}.spm.util.voi.roi{1}.mask.image = cellstr(mask1(1:end-3));
+matlabbatch{1}.spm.util.voi.roi{2}.mask.threshold = 0.0;
+matlabbatch{1}.spm.util.voi.roi{2}.mask.image = cellstr(mask2);
 matlabbatch{1}.spm.util.voi.expression        = 'i1 & i2';
 
 % Run batch
 spm_jobman('run',matlabbatch);
+
+% gzip
+unix(['gzip ', fullfile(p1, p2)]);

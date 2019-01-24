@@ -1,4 +1,4 @@
-% Example script to run a simple pRF analysis on a voxel-by-voxel basis 
+% Example script to run a simple pRF analysis on a voxel-by-voxel basis
 % and view the results.
 %
 % Neuronal model:      Single Gaussian function
@@ -9,35 +9,84 @@
 
 % Settings
 
+clc; close all;
+
 % Directory of the downloaded example dataset
-data_root_dir = 'D:\samdata\';
-data_dir      = fullfile(data_root_dir,'example','pRF');
+data_root_dir = '/media/sf_D_DRIVE/MotDepPrf/Analysis/S02/06_bayesPrf/';
+data_dir      = '/media/sf_D_DRIVE/MotDepPrf/Analysis/S02/06_bayesPrf/data/';
+surf_dir      = '/media/sf_D_DRIVE/MotDepPrf/Analysis/S02/Anatomy/Session02/';
 
 % Directory of GLM
-glm_dir  = fullfile(pwd,'../GLM');
+glm_dir  = '/media/sf_D_DRIVE/MotDepPrf/Analysis/S02/06_bayesPrf/glm/';
 
-TR = 1;         % Repetition time
-TE = 0.055;     % Echo time
+% Set VOI name
+try
+  voi_name;
+catch
+  voi_name = 'voi_name';
+end
+
+% Set model name
+try
+  mdl_name;
+catch
+  mdl_name = 'mdl_name';
+end
+
+% Motion condition
+try
+  mtn_cnd;
+catch
+  mtn_cnd = 'mtn_cnd';
+end
+
+% Stepping direction
+try
+  stp_drc;
+catch
+  stp_drc = 'stp_drc';
+end
+
+% Repetition time
+TR = 2;
+% Echo time
+TE = 0.020;
+% Bins per TR (default 16 or number of slices)
+nmicrotime    = 35;
+% Duration of stimuli (secs)
+stim_duration = 1.4;
+% Diameter of stimuli in degrees
+stim_diameter = 17;
 
 % Which sessions to include
-sess = 1:10;
+switch stp_drc
+    case '_outward'
+        sess = 1:2:11;
+    case '_inward'
+        sess = 2:2:11;
+end
 num_sess = length(sess);
 
-% The hemisphere to analyse. We'll just do left for now.
-hemi = 'lh';
+% Update glm_dir
+glm_dir = fullfile(glm_dir, [voi_name mtn_cnd stp_drc]);
 
 %% Prepare inputs
 
-% Build a structure containing which stimulus pixels were illuminated at
-% each time step.
-load(fullfile(data_dir,'aps_Bars.mat'));
-U = prepare_inputs_polar_samsrf(ApFrm,TR);
+% cd into scripts directory
+cd(fullfile(data_root_dir, 'scripts'))
+
+% load exp info
+load(fullfile(data_root_dir,'expInfo',['ApnFrm',mtn_cnd,stp_drc,'.mat']));
+U = prepare_inputs_polar_samsrf(ApFrm,TR, nmicrotime, stim_duration, stim_diameter);
+% remove empty fields from structure
+empty_elems = arrayfun(@(s) all(structfun(@isempty,s)), U);
+U(empty_elems) = [];
 
 % The timeseries from each session are stored in a VOI_xx.mat file. Build a
 % cell array of the VOI files for each session.
 xY = cell(1,num_sess);
 for i = 1:num_sess
-    filename = sprintf('VOI_%s_prf_mask_%d.mat',hemi,sess(i));
+    filename = sprintf('VOI_%s_%d.mat',voi_name, i);
     xY{i}    = fullfile(glm_dir,filename);
 end
 %% Specify pRF model (all 2422 voxels)
@@ -50,63 +99,36 @@ SPM = SPM.SPM;
 SPM.swd = glm_dir;
 
 % Set pRF specification options
-options = struct('TE', TE,...
-                 'voxel_wise', true,...
-                 'name', [hemi '_SamSrf_example'],...
-                 'model', 'spm_prf_fcn_gaussian_polar',...
-                 'B0',3);
-             
+options = struct('TE',TE, ...             % echo time
+                 'voxel_wise',true, ...   % per voxel (true) or ROI (false)
+                 'model', mdl_name,... % pRF function (spm_prf_fcn...)
+                 'hE',6, ...              % expected log precision of noise
+                 'P',[], ...              % starting parameters
+                 'B0',7, ...              % fMRI field strength (teslas)
+                 'avg_sess',true, ...     % average sessions' timeseries
+                 'avg_method','mean',...  % accepts 'mean' or 'eigen'
+                 'name', [voi_name mtn_cnd stp_drc]);
+
+
 % Specify pRF model (.mat file will be stored in the GLM directory)
 PRF = spm_prf_analyse('specify',SPM,xY,U,options);
+num_voxels = size(PRF.Y.y, 2);
 
-%% Estimate one voxel as an example (voxel 1)
-voxel = 1;
-
-% Model to estimate
-prf_file = fullfile(glm_dir,['PRF_' hemi '_SamSrf_example.mat']);
-
-% Estimation options
-options  = struct('voxels',voxel);
-
-% Estimate
-PRF_est = spm_prf_analyse('estimate',prf_file,options);
-
-% Review
-spm_prf_review(prf_file, voxel);
 %% Estimate all voxels (slow)
+voxel = 1:num_voxels;
 
 % Model to estimate
-prf_file = fullfile(glm_dir,['PRF_' hemi '_SamSrf_example.mat']);
+prf_file = fullfile(glm_dir,['PRF_' voi_name mtn_cnd stp_drc '.mat']);
 
 % Estimation options
-options  = struct('use_parfor',true);
+options = struct('init', 'GLM_P', ...    % Initialization.
+                 'use_parfor', true, ... % Parallelization
+                 'nograph', true, ...    % If true, disables plots
+                 'voxels', voxel ...     % Voxels indices (optional)
+                 );
 
 % Estimate
 PRF_est = spm_prf_analyse('estimate',prf_file,options);
 
 % Review
 spm_prf_review(prf_file);
-%% Convert the left V1 label to a nifti mask so we can do some ROI analyses
-label_file = fullfile(data_dir, 'lh_V1.label');
-spm_prf_import_label( label_file, glm_dir );
-
-%% Plot the summed pRF response in right V1
-
-% Load estimated pRF file
-prf_file = fullfile(glm_dir,['PRF_' hemi '_SamSrf_example.mat']);
-load(prf_file);
-
-% Load VOI (imported using spm_prf_import_label)
-roi = fullfile(glm_dir, [hemi '_V1.nii']);
-
-figure('Color','w');
-spm_prf_summarise(PRF,roi);
-title('Region of interest','FontSize',16);
-%% Compute a negative entropy map (certainty of the pRF location)
-
-% Load estimated pRF file
-prf_file = fullfile(glm_dir,['PRF_' hemi '_SamSrf_example.mat']);
-load(prf_file);
-
-% Compute and plot
-spm_prf_plot_entropy(PRF,{'dist','angle'},'dist_angle',true);

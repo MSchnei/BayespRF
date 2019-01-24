@@ -1,21 +1,20 @@
-function U = prepare_inputs_polar_samsrf(ApFrm,TR)
+function U = prepare_inputs_polar_samsrf(ApFrm,TR, nmicrotime, stim_duration, stim_diameter)
 % Produces the input structure needed for spm_prf_analyse() given a 3D
 % stimuli matrix with dimensions [x,y,t].
 %
 % Inputs:
 %
-% ApFrm       - [x,y,t] binary matrix indiciating which pixel locations
-%               were illuminated at each time point t
-% TR          - Scanner repetition time (TR)
+% ApFrm         - [x,y,t] binary matrix indiciating which pixel locations
+%                 were illuminated at each time point t
+% TR            - Scanner repetition time (TR)
+% nmicrotime    - Bins per TR
+% stim_duration - Duration of stimuli (secs)
+% stim_diameter - Diameter of stimuli in degrees
+
 %
 % Returns:
 %
 % U           - Input structure to feed to spm_prf_analyse.m
-
-% Settings
-nmicrotime    = 16;     % Bins per TR
-stim_duration = 1;      % Duration of stimuli (secs)
-stim_diameter = 17;     % Diameter of stimuli in degrees
 
 n = size(ApFrm,3);
 
@@ -39,7 +38,7 @@ for t = 1:n
     % Extract stimulated coordinates
     [y,x] = ind2sub(res,find(im));
     
-    % Rescale [1,41] to to units of visual angle (degrees)
+    % Rescale [1,41] to units of visual angle (degrees)
     r = (stim_diameter/2);
     x = rescale(x, 1, res(1), -r, r);
     y = rescale(y, 1, res(1), -r, r);
