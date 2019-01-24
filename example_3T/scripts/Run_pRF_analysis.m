@@ -63,12 +63,6 @@ stim_diameter = 17;
 % Update glm_dir
 glm_dir = fullfile(glm_dir, [voi_name mtn_cnd stp_drc]);
 
-% Change the current folder to the folder of this m-file.
-if(~isdeployed)
-    tmp = matlab.desktop.editor.getActive;
-    cd(fileparts(tmp.Filename));
-end
-
 % Which sessions to include
 switch stp_drc
     case '_outward'

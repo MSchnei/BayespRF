@@ -44,12 +44,6 @@ stim_diameter = 17;
 
 %% Derive and adjust settings
 
-% Change the current folder to the folder of this m-file.
-if(~isdeployed)
-    tmp = matlab.desktop.editor.getActive;
-    cd(fileparts(tmp.Filename));
-end
-
 % Set present directory to variable
 start_dir = pwd;
 
