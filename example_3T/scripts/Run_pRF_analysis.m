@@ -17,34 +17,34 @@ data_dir      = '/media/sf_D_DRIVE/MotDepPrf/Analysis/S02/06_bayesPrf/data/';
 surf_dir      = '/media/sf_D_DRIVE/MotDepPrf/Analysis/S02/Anatomy/Session02/';
 
 % Directory of GLM
-glm_dir  = '/media/sf_D_DRIVE/MotDepPrf/Analysis/S02/06_bayesPrf/glm/';
+glm_dir  = '/media/sf_D_DRIVE/MotDepPrf/Analysis/S02/06_bayesPrf/pRF_results/';
 
 % Set VOI name
 try
   voi_name;
 catch
-  voi_name = 'voi_name';
+  voi_name = 'S02_2H_V1_1mm';
 end
 
 % Set model name
 try
   mdl_name;
 catch
-  mdl_name = 'mdl_name';
+  mdl_name = 'spm_prf_fcn_gaussian_polar';
 end
 
 % Motion condition
 try
   mtn_cnd;
 catch
-  mtn_cnd = 'mtn_cnd';
+  mtn_cnd = '_expn';
 end
 
 % Stepping direction
 try
   stp_drc;
 catch
-  stp_drc = 'stp_drc';
+  stp_drc = '_outward';
 end
 
 % Repetition time
@@ -58,6 +58,17 @@ stim_duration = 1.4;
 % Diameter of stimuli in degrees
 stim_diameter = 17;
 
+%% Derive and adjust settings
+
+% Update glm_dir
+glm_dir = fullfile(glm_dir, [voi_name mtn_cnd stp_drc]);
+
+% Change the current folder to the folder of this m-file.
+if(~isdeployed)
+    tmp = matlab.desktop.editor.getActive;
+    cd(fileparts(tmp.Filename));
+end
+
 % Which sessions to include
 switch stp_drc
     case '_outward'
@@ -67,18 +78,12 @@ switch stp_drc
 end
 num_sess = length(sess);
 
-% Update glm_dir
-glm_dir = fullfile(glm_dir, [voi_name mtn_cnd stp_drc]);
-
 %% Prepare inputs
 
-% cd into scripts directory
-cd(fullfile(data_root_dir, 'scripts'))
-
-% load exp info
+% Load exp info
 load(fullfile(data_root_dir,'expInfo',['ApnFrm',mtn_cnd,stp_drc,'.mat']));
 U = prepare_inputs_polar_samsrf(ApFrm,TR, nmicrotime, stim_duration, stim_diameter);
-% remove empty fields from structure
+% Remove empty fields from structure
 empty_elems = arrayfun(@(s) all(structfun(@isempty,s)), U);
 U(empty_elems) = [];
 
@@ -89,6 +94,7 @@ for i = 1:num_sess
     filename = sprintf('VOI_%s_%d.mat',voi_name, i);
     xY{i}    = fullfile(glm_dir,filename);
 end
+
 %% Specify pRF model (all 2422 voxels)
 
 % Load SPM for timing information / image dimensions
