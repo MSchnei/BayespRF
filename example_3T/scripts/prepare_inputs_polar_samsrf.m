@@ -1,4 +1,4 @@
-function U = prepare_inputs_polar_samsrf(ApFrm,TR, nmicrotime, stim_duration, stim_diameter)
+function U = prepare_inputs_polar_samsrf(ApFrm,TR, nmicrotime, stim_duration, stim_diameter, varargin)
 % Produces the input structure needed for spm_prf_analyse() given a 3D
 % stimuli matrix with dimensions [x,y,t].
 %
@@ -10,6 +10,7 @@ function U = prepare_inputs_polar_samsrf(ApFrm,TR, nmicrotime, stim_duration, st
 % nmicrotime    - Bins per TR
 % stim_duration - Duration of stimuli (secs)
 % stim_diameter - Diameter of stimuli in degrees
+% imscale       - (optional) Scale of image space for modelling, default 41
 
 %
 % Returns:
@@ -17,6 +18,23 @@ function U = prepare_inputs_polar_samsrf(ApFrm,TR, nmicrotime, stim_duration, st
 % U           - Input structure to feed to spm_prf_analyse.m
 
 n = size(ApFrm,3);
+
+% Cechk for optional inputs
+numvarargs = length(varargin);
+if numvarargs > 1
+    error('varargin:TooManyInputs', ...
+          'requires at most 1 optional inputs');
+end
+
+% set defaults for optional inputs
+optargs = {41};
+
+% now put these defaults into the valuesToUse cell array, 
+% and overwrite the ones specified in varargin.
+optargs(1:numvarargs) = varargin;
+
+% Place optional args in memorable variable names
+[imscale] = optargs{:};
 
 for t = 1:n
     
@@ -28,8 +46,8 @@ for t = 1:n
         continue;
     end
     
-    % Rescale to 41 x 41 resolution
-    res = [41 41];
+    % Rescale to imscale x imscale resolution
+    res = [imscale imscale];
     im  = imresize(im,res);
     
     % Binarize
@@ -38,7 +56,7 @@ for t = 1:n
     % Extract stimulated coordinates
     [y,x] = ind2sub(res,find(im));
     
-    % Rescale [1,41] to units of visual angle (degrees)
+    % Rescale [1,imscale] to units of visual angle (degrees)
     r = (stim_diameter/2);
     x = rescale(x, 1, res(1), -r, r);
     y = rescale(y, 1, res(1), -r, r);
