@@ -61,7 +61,7 @@ function varargout = spm_prf_analyse(mode,varargin)
 %                  'P',[], ...            % starting parameters
 %                  'B0',3, ...            % fMRI field strength (teslas)
 %                  'avg_sess',true, ...   % average sessions' timeseries
-%                  'avg_method','mean'    % accepts 'mean' or 'eigen'
+%                  'avg_method','mean'    % 'mean', 'eigen' or vector
 %                  'delays', TR / 2 ...   % microtime offset
 %                  'pE', struct, ...      % (optional) prior means
 %                  'pC', struct, ...      % (optional) prior variance
@@ -274,7 +274,22 @@ catch
     options.avg_method = 'mean';
 end
 
+% Check if interleaved averaging was requested
+if ~ischar(options.avg_method) % interleaved averaging
+    % copy the vector with instruction for interleaved averaging
+    avg_vec = options.avg_method;
+    % set options.avg_method to 'inter'
+    options.avg_method = 'inter';
+end
+
 for sess = 1:n_sess
+    
+    % get index for interleaved averaging, if avg_method is 'inter'
+    if isequal(options.avg_method, 'inter')
+        inter_ind = avg_vec(sess);
+    else
+        inter_ind = 1;
+    end
     
     % Unpack
     if ischar(rois{sess})
@@ -287,9 +302,7 @@ for sess = 1:n_sess
         xY_sess     = rois{sess}.xY;
         Y_sess      = rois{sess}.Y;
     end
-        
-    options.avg_method = 'mean';
-    
+
     % Choose voxel-wise or eigenvariate data
     if options.voxel_wise
         y = xY_sess.y;
@@ -312,20 +325,46 @@ for sess = 1:n_sess
         XYZmm = xY_sess.XYZmm;
     end
     
-    if ~isfield(Y,'y') || isempty(Y.y)
-        Y.y = y;
-    elseif options.avg_sess
-        % Sum over sessions
-        Y.y = Y.y + y;
+    if options.avg_sess
+        % Add
+        try
+            Y(inter_ind).y = Y(inter_ind).y + y;
+        catch
+            Y(inter_ind).y = y;
+        end
     else
         % Concatenate
-        Y.y = [Y.y; y];
+        try
+            Y(inter_ind).y = [Y(inter_ind).y; y];
+        catch
+            Y(inter_ind).y = y;
+        end
     end
 end
 
+% Complete averaging over sessions
 if options.avg_sess
-    % Complete averaging over sessions
-    Y.y = Y.y ./ n_sess;    
+    switch options.avg_method
+        case 'mean'        
+            Y.y = Y.y ./ n_sess;   
+        case 'eigen'
+            error('Eigen not implemented for options.avg_sess = 1')
+        case 'inter'
+            % Initialise matrix for concatenated time series
+            y_conc = [];
+            % get unique elements of vector with interleaved indices
+            unq_elem = unique(avg_vec);
+            for inter_ind = unq_elem
+                % Divide by number of sessions that went into average
+                Y(inter_ind).y = Y(inter_ind).y ./ sum(avg_vec==inter_ind);
+                % Concatenate
+                y_conc = [y_conc; Y(inter_ind).y];
+            end
+            % reset Y
+            Y = [];
+            % assign concatenated average time series
+            Y.y = y_conc;
+    end
 end
 
 % check scaling of Y (enforcing a maximum effect size of 4)
